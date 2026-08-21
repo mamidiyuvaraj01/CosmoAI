@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cosmo AI — Omniscient Intelligence powered by Groq</title>
+    <meta name="description" content="An omniscient, hyper-fast AI chatbot powered by Groq Cloud and Flask with an interactive reactive cartoon companion.">
+
+    <!-- Fonts: Outfit and JetBrains Mono for pristine readability -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Marked.js for Markdown Rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- Highlight.js for Code Highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/cartoon.css">
+</head>
+<body class="app-body">
+
+    <!-- Ambient Glowing Background Grid & Mesh Orbs -->
+    <div class="ambient-mesh" aria-hidden="true">
+        <div class="mesh-orb orb-1"></div>
+        <div class="mesh-orb orb-2"></div>
+        <div class="mesh-orb orb-3"></div>
+        <div class="mesh-grid"></div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="app-layout">
+
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="brand">
+                    <div class="brand-icon">
+                        <i data-lucide="bot" class="brand-svg"></i>
+                        <span class="pulse-ring"></span>
+                    </div>
+                    <div class="brand-text">
+                        <span class="brand-title">COSMO <span class="gradient-text">AI</span></span>
+                        <span class="brand-subtitle">Omniscient • Groq Powered</span>
+                    </div>
+                </div>
+                <button class="icon-btn sidebar-close-btn" id="sidebarCloseBtn" title="Close Sidebar">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+
+            <!-- New Chat Action -->
+            <div class="sidebar-action">
+                <button class="new-chat-btn" id="newChatBtn">
+                    <i data-lucide="plus-circle"></i>
+                    <span>New Conversation</span>
+                    <kbd class="shortcut-kbd">Ctrl+K</kbd>
+                </button>
+            </div>
+
+            <!-- Knowledge Categories -->
+            <div class="sidebar-section">
+                <div class="section-title">
+                    <span>OMNISCIENT DOMAINS</span>
+                    <i data-lucide="sparkles" class="section-icon"></i>
+                </div>
+                <div class="category-list" id="categoryList">
+                    {% for cat in categories %}
+                    <button class="category-item" data-id="{{ cat.id }}" data-prompt="{{ cat.prompt }}">
+                        <div class="cat-indicator" style="background: {{ cat.color }}; box-shadow: 0 0 10px {{ cat.color }}80;"></div>
+                        <span class="cat-name">{{ cat.name }}</span>
+                        <span class="cat-badge">{{ cat.badge }}</span>
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Recent Chat History -->
+            <div class="sidebar-section history-section">
+                <div class="section-title">
+                    <span>RECENT CHATS</span>
+                    <button class="text-btn clear-history-btn" id="clearAllHistoryBtn" title="Clear all history">Clear</button>
+                </div>
+                <div class="chat-history-list" id="chatHistoryList">
+                    <!-- Dynamic chat sessions loaded by JS -->
+                </div>
+            </div>
+
+            <!-- Sidebar Footer & API Key Status -->
+            <div class="sidebar-footer">
+                <div class="api-status-card" id="openSettingsCard">
+                    <div class="status-indicator-dot {% if has_key %}connected{% else %}missing{% endif %}" id="keyStatusDot"></div>
+                    <div class="status-info">
+                        <span class="status-title" id="keyStatusTitle">{% if has_key %}Groq API Connected{% else %}API Key Required{% endif %}</span>
+                        <span class="status-desc" id="keyStatusDesc">{% if has_key %}Lightning-fast inference{% else %}Click to configure key{% endif %}</span>
+                    </div>
+                    <i data-lucide="settings" class="status-gear"></i>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Sidebar Backdrop for Mobile -->
+        <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+        <!-- Main Chat Area -->
+        <main class="main-content">
+
+            <!-- Chat Header Bar -->
+            <header class="chat-header">
+                <div class="header-left">
+                    <button class="icon-btn mobile-menu-btn" id="sidebarOpenBtn" title="Toggle Sidebar">
+                        <i data-lucide="menu"></i>
+                    </button>
+
+                    <!-- Active Model Selector -->
+                    <div class="model-selector-wrapper">
+                        <button class="model-dropdown-btn" id="modelSelectBtn">
+                            <i data-lucide="cpu" class="model-icon"></i>
+                            <div class="model-selected-info">
+                                <span class="model-label">Model</span>
+                                <span class="model-name" id="currentModelName">GPT-OSS 120B</span>
+                            </div>
+                            <span class="model-tag" id="currentModelBadge">Omniscient</span>
+                            <i data-lucide="chevron-down" class="chevron-icon"></i>
+                        </button>
+
+                        <!-- Model Dropdown Menu -->
+                        <div class="model-menu" id="modelMenu">
+                            <div class="menu-header">Select Groq Neural Model</div>
+                            <div class="model-menu-list">
+                                {% for m in models %}
+                                <div class="model-option {% if m.id == default_model %}active{% endif %}" data-model-id="{{ m.id }}" data-model-name="{{ m.name }}" data-model-badge="{{ m.badge }}">
+                                    <div class="opt-top">
+                                        <span class="opt-name">{{ m.name }}</span>
+                                        <span class="opt-badge">{{ m.badge }}</span>
+                                    </div>
+                                    <p class="opt-desc">{{ m.description }}</p>
+                                    <div class="opt-meta">
+                                        <span class="opt-speed">{{ m.speed }}</span>
+                                        <span class="opt-ctx">{{ m.context }}</span>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="header-right">
+                    <!-- Audio Voice Narration Toggle -->
+                    <button class="icon-btn" id="ttsToggleBtn" title="Toggle AI Voice Audio">
+                        <i data-lucide="volume-2" id="ttsIcon"></i>
+                    </button>
+
+                    <!-- Export Conversation -->
+                    <button class="icon-btn" id="exportChatBtn" title="Export Conversation">
+                        <i data-lucide="download"></i>
+                    </button>
+
+                    <!-- Clear Active Chat -->
+                    <button class="icon-btn" id="clearChatBtn" title="Clear Screen">
+                        <i data-lucide="trash-2"></i>
+                    </button>
+
+                    <!-- Settings Modal Trigger -->
+                    <button class="icon-btn" id="settingsModalBtn" title="Settings & Groq API Key">
+                        <i data-lucide="sliders-horizontal"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Chat Messages Viewport -->
+            <div class="chat-messages" id="chatMessages">
+
+                <!-- Hero Welcome State (when chat is empty) -->
+                <div class="welcome-hero" id="welcomeHero">
+                    <div class="hero-badge">
+                        <i data-lucide="sparkles"></i>
+                        <span>UNIVERSAL INTELLIGENCE</span>
+                    </div>
+                    <h1 class="hero-title">
+                        Ask Anything. <span class="gradient-text">Master Everything.</span>
+                    </h1>
+                    <p class="hero-desc">
+                        Powered by Groq's high-speed LPU inference engine. Capable of deep reasoning, software engineering, science, creative synthesis, and philosophical discourse.
+                    </p>
+
+                    <!-- Quick Starter Prompts Grid -->
+                    <div class="starter-grid">
+                        <div class="starter-card" data-prompt="Build a full Python Flask app with authentication, rate limiting, and SQLite database.">
+                            <div class="card-icon code-color"><i data-lucide="code-2"></i></div>
+                            <div class="card-content">
+                                <h3>Full-Stack Code</h3>
+                                <p>Write a production-ready Flask auth architecture.</p>
+                            </div>
+                        </div>
+
+                        <div class="starter-card" data-prompt="Explain how quantum superposition and entanglement allow quantum computers to outperform classical supercomputers.">
+                            <div class="card-icon science-color"><i data-lucide="atom"></i></div>
+                            <div class="card-content">
+                                <h3>Quantum Physics</h3>
+                                <p>Superposition & entanglement deep-dive.</p>
+                            </div>
+                        </div>
+
+                        <div class="starter-card" data-prompt="Write an immersive cyberpunk story about a synthetic mind waking up inside a decommissioned orbital station.">
+                            <div class="card-icon creative-color"><i data-lucide="pen-tool"></i></div>
+                            <div class="card-content">
+                                <h3>Sci-Fi Storytelling</h3>
+                                <p>Craft an atmospheric cyberpunk narrative.</p>
+                            </div>
+                        </div>
+
+                        <div class="starter-card" data-prompt="What are the core differences between Stoicism and Existentialism regarding human purpose and overcoming suffering?">
+                            <div class="card-icon math-color"><i data-lucide="book-open"></i></div>
+                            <div class="card-content">
+                                <h3>Philosophy & Logic</h3>
+                                <p>Compare Stoicism vs Existentialist philosophy.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Messages stream container -->
+                <div class="messages-container" id="messagesContainer"></div>
+
+                <!-- Mascot Floating Dock Position -->
+                <div id="mascotAnchor"></div>
+            </div>
+
+            <!-- Chat Input Bar -->
+            <footer class="chat-input-wrapper">
+                <form class="input-form" id="chatForm">
+                    <div class="input-box-container">
+                        <!-- Auto-expanding Textarea -->
+                        <textarea 
+                            id="userInput" 
+                            class="chat-textarea" 
+                            placeholder="Message Cosmo across any category... (Shift + Enter for new line)" 
+                            rows="1"
+                            maxlength="8000"
+                        ></textarea>
+
+                        <!-- Actions inside Input Box -->
+                        <div class="input-actions-bar">
+                            <div class="input-left-tools">
+                                <span class="active-category-tag" id="activeCategoryTag">
+                                    <i data-lucide="globe"></i>
+                                    <span>All Domains</span>
+                                </span>
+                                <span class="char-counter" id="charCounter">0/8000</span>
+                            </div>
+
+                            <div class="input-right-tools">
+                                <!-- Voice STT Input -->
+                                <button type="button" class="input-tool-btn" id="voiceInputBtn" title="Voice Input (Speech-to-Text)">
+                                    <i data-lucide="mic" id="voiceMicIcon"></i>
+                                </button>
+
+                                <!-- Stop Generation (Visible during streaming) -->
+                                <button type="button" class="input-tool-btn stop-btn hidden" id="stopGenerationBtn" title="Stop generating">
+                                    <i data-lucide="square"></i>
+                                </button>
+
+                                <!-- Send Button -->
+                                <button type="submit" class="send-btn" id="sendBtn" title="Send Message (Enter)">
+                                    <i data-lucide="arrow-up"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+                <div class="input-disclaimer">
+                    Cosmo is powered by ultra-fast Groq LPU inference. Verify important technical or medical facts.
+                </div>
+            </footer>
+
+        </main>
+
+        <!-- INTERACTIVE REACTIVE CARTOON MASCOT: SPARKY / COSMO -->
+        <aside class="cartoon-mascot-container" id="cartoonMascot" title="Click to interact with Cosmo!">
+            <!-- Speech Bubble -->
+            <div class="mascot-speech-bubble" id="mascotBubble">
+                <span id="mascotSpeechText">Hi! I'm Cosmo. Ask me anything in any universe!</span>
+                <span class="bubble-arrow"></span>
+            </div>
+
+            <!-- Mascot Character SVG Vector Rig -->
+            <div class="mascot-body-wrapper" id="mascotBody">
+                <svg class="mascot-svg" viewBox="0 0 160 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <!-- Gradients & Glows -->
+                        <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#3b82f6" />
+                            <stop offset="50%" stop-color="#6366f1" />
+                            <stop offset="100%" stop-color="#8b5cf6" />
+                        </linearGradient>
+                        <linearGradient id="visorGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#0f172a" />
+                            <stop offset="100%" stop-color="#020617" />
+                        </linearGradient>
+                        <linearGradient id="bellyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#1e1b4b" />
+                            <stop offset="100%" stop-color="#312e81" />
+                        </linearGradient>
+                        <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
+                            <feGaussianBlur stdDeviation="4" result="blur" />
+                            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                        </filter>
+                    </defs>
+
+                    <!-- Hover Shadow -->
+                    <ellipse cx="80" cy="172" rx="42" ry="7" class="mascot-shadow" />
+
+                    <!-- Floating Left Hand -->
+                    <g class="mascot-hand hand-left">
+                        <circle cx="22" cy="115" r="11" fill="url(#bodyGrad)" stroke="#a5b4fc" stroke-width="2" />
+                        <circle cx="22" cy="115" r="4" fill="#06b6d4" />
+                    </g>
+
+                    <!-- Floating Right Hand -->
+                    <g class="mascot-hand hand-right">
+                        <circle cx="138" cy="115" r="11" fill="url(#bodyGrad)" stroke="#a5b4fc" stroke-width="2" />
+                        <circle cx="138" cy="115" r="4" fill="#06b6d4" />
+                    </g>
+
+                    <!-- Antenna with Glowing Orb -->
+                    <g class="mascot-antenna">
+                        <line x1="80" y1="42" x2="80" y2="18" stroke="#818cf8" stroke-width="4" stroke-linecap="round" />
+                        <circle cx="80" cy="14" r="9" class="antenna-orb" id="antennaOrb" fill="#06b6d4" filter="url(#neonGlow)" />
+                        <circle cx="77" cy="11" r="3" fill="#ffffff" />
+                    </g>
+
+                    <!-- Robot Torso / Lower Body -->
+                    <rect x="42" y="98" width="76" height="52" rx="26" fill="url(#bodyGrad)" stroke="#818cf8" stroke-width="2.5" />
+                    <rect x="52" y="108" width="56" height="32" rx="16" fill="url(#bellyGrad)" stroke="#6366f1" stroke-width="1.5" />
+                    <!-- Core Heart Reactor -->
+                    <circle cx="80" cy="124" r="8" class="core-reactor" id="coreReactor" fill="#06b6d4" filter="url(#neonGlow)" />
+
+                    <!-- Robot Head / Helmet -->
+                    <rect x="25" y="36" width="110" height="74" rx="34" fill="url(#bodyGrad)" stroke="#a5b4fc" stroke-width="3" />
+                    <rect x="35" y="44" width="90" height="58" rx="25" fill="url(#visorGrad)" stroke="#4338ca" stroke-width="2" />
+
+                    <!-- Left Eye Display -->
+                    <g class="mascot-eye left-eye" id="leftEyeGroup">
+                        <ellipse cx="62" cy="72" rx="11" ry="11" class="eye-lens" id="leftEye" fill="#06b6d4" filter="url(#neonGlow)" />
+                        <circle cx="65" cy="69" r="4" class="eye-pupil" id="leftPupil" fill="#ffffff" />
+                    </g>
+
+                    <!-- Right Eye Display -->
+                    <g class="mascot-eye right-eye" id="rightEyeGroup">
+                        <ellipse cx="98" cy="72" rx="11" ry="11" class="eye-lens" id="rightEye" fill="#06b6d4" filter="url(#neonGlow)" />
+                        <circle cx="101" cy="69" r="4" class="eye-pupil" id="rightPupil" fill="#ffffff" />
+                    </g>
+
+                    <!-- Expressive Animated Mouth -->
+                    <path d="M 72 87 Q 80 93 88 87" stroke="#06b6d4" stroke-width="2.5" stroke-linecap="round" fill="none" class="mascot-mouth" id="mascotMouth" />
+
+                    <!-- Cheeks (Blush) -->
+                    <circle cx="48" cy="82" r="5" fill="#f43f5e" opacity="0.6" class="mascot-blush" />
+                    <circle cx="112" cy="82" r="5" fill="#f43f5e" opacity="0.6" class="mascot-blush" />
+
+                    <!-- Cyber Glasses (Visible in Coding / Math mode) -->
+                    <g class="mascot-glasses hidden" id="mascotGlasses">
+                        <rect x="42" y="60" width="36" height="24" rx="6" fill="#10b981" opacity="0.85" stroke="#34d399" stroke-width="2" />
+                        <rect x="82" y="60" width="36" height="24" rx="6" fill="#10b981" opacity="0.85" stroke="#34d399" stroke-width="2" />
+                        <line x1="78" y1="72" x2="82" y2="72" stroke="#34d399" stroke-width="2" />
+                        <text x="46" y="77" fill="#ffffff" font-size="10" font-family="monospace">&gt; 1</text>
+                        <text x="86" y="77" fill="#ffffff" font-size="10" font-family="monospace">0 &lt;</text>
+                    </g>
+                </svg>
+            </div>
+
+            <!-- Quick Mascot Controls -->
+            <div class="mascot-quick-actions">
+                <button class="mascot-pill-btn" id="mascotMoodBtn" title="Change Mascot Mood">
+                    <span id="mascotMoodEmoji">🤖</span> <span id="mascotMoodLabel">Ready</span>
+                </button>
+            </div>
+        </aside>
+
+    </div>
+
+    <!-- SETTINGS & API KEY MODAL -->
+    <div class="modal-overlay hidden" id="settingsModal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <i data-lucide="key-round" class="modal-icon"></i>
+                    <h2>Groq Cloud & AI Settings</h2>
+                </div>
+                <button class="icon-btn modal-close-btn" id="closeSettingsModalBtn">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+
+            <div class="modal-body">
+                <div class="setting-item">
+                    <label for="groqApiKeyInput" class="setting-label">
+                        <span>Groq API Key</span>
+                        <a href="https://console.groq.com/keys" target="_blank" rel="noopener" class="help-link">Get Free Key <i data-lucide="external-link"></i></a>
+                    </label>
+                    <div class="input-with-action">
+                        <input 
+                            type="password" 
+                            id="groqApiKeyInput" 
+                            class="form-input" 
+                            placeholder="gsk_..." 
+                            value=""
+                            autocomplete="off"
+                        >
+                        <button type="button" class="btn secondary-btn" id="validateKeyBtn">Test Key</button>
+                    </div>
+                    <p class="setting-hint" id="keyValidateFeedback">Your API key is securely stored in your session and local `.env`.</p>
+                </div>
+
+                <div class="setting-item">
+                    <label for="systemRoleCustom" class="setting-label">AI Persona & Custom Instructions (Optional)</label>
+                    <textarea 
+                        id="systemRoleCustom" 
+                        class="form-textarea" 
+                        rows="3" 
+                        placeholder="Add custom behavioral instructions for Cosmo..."
+                    ></textarea>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-item flex-1">
+                        <label class="setting-label">AI Audio Voice Synthesis</label>
+                        <select id="ttsVoiceSelect" class="form-select">
+                            <option value="default">Default Web Voice</option>
+                        </select>
+                    </div>
+                    <div class="setting-item">
+                        <label class="setting-label">Sound Effects</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="sfxToggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn ghost-btn" id="cancelSettingsBtn">Cancel</button>
+                <button type="button" class="btn primary-btn" id="saveSettingsBtn">Save & Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOAST NOTIFICATION CONTAINER -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Scripts -->
+    <script src="/static/js/cartoon.js"></script>
+    <script src="/static/js/app.js"></script>
+    <script>
+        // Initialize Lucide Icons
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+        });
+    </script>
+</body>
+</html>
