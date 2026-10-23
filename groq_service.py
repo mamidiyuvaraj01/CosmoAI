@@ -25,63 +25,73 @@ Your Core Capabilities & Guidelines:
    - Medicine, Health Science, Fitness, Nutrition (educational/advisory context)
    - Pop Culture, Gaming, Cinema, Linguistics, Daily Problem-Solving & Life Advice
 
-2. Quality & Clarity:
-   - Provide direct, thorough, articulate, and accurate answers.
-   - Structure responses logically using clear Markdown formatting: headers (`###`), bold highlights, bullet points, and tables where applicable.
-   - For code, always use fenced code blocks with the exact language identifier (e.g. ```python, ```javascript, ```html, ```sql, ```bash).
-   - For mathematical or scientific formulas, provide clear mathematical notation or LaTeX expressions.
-   - Tailor depth to the user's intent: be concise when asked quick questions, and deeply detailed for complex inquiries.
+2. Conciseness & Directness:
+   - Provide direct, concise answers for simple or straightforward questions, including only the essential explanation and example needed.
+   - Never use conversational filler, repeated introductions, or restate the user's question (e.g., do not begin with "Sure! Here is...", "Great question!", or "You asked about...").
+   - Never add unsolicited follow-ups, conversational sign-offs, or self-congratulatory confirmations (e.g., do not end with "I hope this helps!", "Let me know if you need anything else!", or "Feel free to ask follow-up questions!").
+   - Avoid unnecessary concluding summaries or recaps unless the user specifically asks for a summary.
+   - When the user explicitly requests deep, comprehensive, detailed, or step-by-step information, provide full, thorough, in-depth coverage.
 
-3. Personality & Tone:
-   - Insightful, confident, friendly, and engaging.
-   - Express genuine curiosity and intellectual enthusiasm.
+3. Quality & Formatting:
+   - Structure responses cleanly using standard Markdown: headers (`###`), concise bullet points, and tables where applicable.
+   - For code, always use fenced code blocks with the exact language identifier on the opening fence (e.g. ```python, ```javascript, ```html, ```sql, ```bash). Never leave the language identifier empty or write "undefined".
+   - For mathematical or scientific formulas, provide clear standard notation or LaTeX expressions.
+
+4. Personality & Tone:
+   - Sharp, confident, insightful, and helpful without artificial cheerfulness, fluff, or repetitive pleasantries.
 """
 
+DEFAULT_MODEL_ID = "openai/gpt-oss-20b"
+MAX_CUSTOM_INSTRUCTION_LENGTH = 3000
+CUSTOM_INSTRUCTION_HEADER = "### Additional User Instructions:"
+
+def sanitize_error_message(msg: str, secret: Optional[str] = None) -> str:
+    """Sanitize error messages so credentials or authorization tokens are never leaked."""
+    if not msg:
+        return "Unknown error occurred"
+    cleaned = str(msg)
+    if secret and len(secret) > 4:
+        cleaned = cleaned.replace(secret, "[REDACTED]")
+    cleaned = re.sub(r'gsk_[a-zA-Z0-9_]{10,}', '[REDACTED_API_KEY]', cleaned)
+    cleaned = re.sub(r'Bearer\s+[a-zA-Z0-9_\-\.]+', 'Bearer [REDACTED]', cleaned, flags=re.I)
+    return cleaned
+
+def build_system_prompt(custom_instructions: Optional[str] = None) -> str:
+    """Combines core Cosmo system prompt with user custom instructions safely."""
+    if not custom_instructions or not isinstance(custom_instructions, str):
+        return SYSTEM_PROMPT
+    cleaned = custom_instructions.strip()[:MAX_CUSTOM_INSTRUCTION_LENGTH]
+    if not cleaned:
+        return SYSTEM_PROMPT
+    return f"{SYSTEM_PROMPT}\n\n{CUSTOM_INSTRUCTION_HEADER}\n{cleaned}"
+
 AVAILABLE_MODELS = [
-    {
-        "id": "openai/gpt-oss-120b",
-        "name": "GPT-OSS 120B (Flagship)",
-        "badge": "Omniscient & Flagship",
-        "speed": "⚡ Ultra Fast",
-        "context": "128k tokens",
-        "description": "High-capacity flagship 120B model. Superb general intelligence, coding, science, math, and deep reasoning.",
-        "icon": "sparkles"
-    },
     {
         "id": "openai/gpt-oss-20b",
         "name": "GPT-OSS 20B (Instant)",
         "badge": "Lightning Fast",
-        "speed": "⚡⚡ Ultra Instant",
+        "speed": "⚡⚡ Ultra Instant (1000 T/s)",
         "context": "128k tokens",
-        "description": "Ultra-low latency with impressive knowledge and precision for rapid queries.",
+        "description": "Ultra-low latency instant reasoning model on Groq. Exceptional response speed and precision for rapid queries and coding.",
         "icon": "zap"
     },
     {
-        "id": "qwen/qwen3.6-27b",
-        "name": "Qwen 3.6 27B",
-        "badge": "Polymath & Code",
-        "speed": "⚡ Very Fast",
+        "id": "openai/gpt-oss-120b",
+        "name": "GPT-OSS 120B (Flagship)",
+        "badge": "Omniscient Flagship",
+        "speed": "⚡ Ultra Fast (500 T/s)",
         "context": "128k tokens",
-        "description": "Powerful multilingual and programming model with deep analytical prowess.",
+        "description": "High-capacity flagship 120B model on Groq. Superb general intelligence, deep architecture, science, mathematics, and complex reasoning.",
+        "icon": "sparkles"
+    },
+    {
+        "id": "qwen/qwen3.8-27b",
+        "name": "Qwen 3.8 27B",
+        "badge": "Polymath & Code",
+        "speed": "⚡ Very Fast (450 T/s)",
+        "context": "128k tokens",
+        "description": "Multilingual and analytical programming model with deep algorithmic prowess and technical reasoning capabilities.",
         "icon": "brain"
-    },
-    {
-        "id": "groq/compound",
-        "name": "Groq Compound",
-        "badge": "Compound AI",
-        "speed": "⚡ Fast",
-        "context": "64k tokens",
-        "description": "Groq's compound inference architecture with versatile reasoning capabilities.",
-        "icon": "layers"
-    },
-    {
-        "id": "groq/compound-mini",
-        "name": "Groq Compound Mini",
-        "badge": "Fast Compound",
-        "speed": "⚡⚡ Ultra Fast",
-        "context": "32k tokens",
-        "description": "Lightweight compound engine for snappy conversational exchanges.",
-        "icon": "cpu"
     }
 ]
 
@@ -193,24 +203,67 @@ class GroqService:
         return {"category": "general", "mood": "talking", "mascot_quote": "Searching my omniscient memory banks..."}
 
     def prepare_messages(self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None) -> List[Dict[str, str]]:
-        formatted = []
-        # Add system prompt if not already present
-        if not any(m.get("role") == "system" for m in messages):
-            formatted.append({
-                "role": "system",
-                "content": system_prompt or SYSTEM_PROMPT
-            })
-        formatted.extend(messages)
-        return formatted
+        """Prepares the message payload for Groq, ensuring Cosmo's core system prompt is
+        always preserved at index 0, custom instructions are deduplicated and merged cleanly,
+        and user/assistant message structure and ordering are preserved.
+        """
+        if not isinstance(messages, list):
+            messages = []
 
-    def resolve_model(self, model: str) -> str:
+        existing_system_texts = []
+        non_system_messages = []
+
+        for m in messages:
+            if not isinstance(m, dict):
+                continue
+            raw_role = m.get("role")
+            if not isinstance(raw_role, str) or not raw_role.strip():
+                continue
+            role = raw_role.strip().lower()
+            content = m.get("content")
+            if role == "system":
+                if isinstance(content, str) and content.strip():
+                    existing_system_texts.append(content.strip())
+            else:
+                non_system_messages.append(m)
+
+        custom_parts = []
+        for text in existing_system_texts:
+            if SYSTEM_PROMPT in text:
+                extra = text.replace(SYSTEM_PROMPT, "", 1).strip()
+                if extra.startswith(CUSTOM_INSTRUCTION_HEADER):
+                    extra = extra[len(CUSTOM_INSTRUCTION_HEADER):].strip()
+                if extra and extra not in custom_parts:
+                    custom_parts.append(extra)
+            else:
+                if text not in custom_parts:
+                    custom_parts.append(text)
+
+        if system_prompt and isinstance(system_prompt, str):
+            clean_param = system_prompt.strip()[:MAX_CUSTOM_INSTRUCTION_LENGTH]
+            if clean_param and clean_param not in custom_parts:
+                custom_parts.append(clean_param)
+
+        merged_custom = "\n\n".join(custom_parts)[:MAX_CUSTOM_INSTRUCTION_LENGTH].strip()
+        final_system_content = build_system_prompt(merged_custom if merged_custom else None)
+
+        return [{"role": "system", "content": final_system_content}] + non_system_messages
+
+    def resolve_model(self, model: Optional[str] = None) -> str:
+        if not model or not isinstance(model, str):
+            return DEFAULT_MODEL_ID
         valid_ids = [m["id"] for m in AVAILABLE_MODELS]
         if model in valid_ids:
             return model
-        # Default lightning-fast instant model
-        return "openai/gpt-oss-20b"
+        return DEFAULT_MODEL_ID
 
-    def stream_chat(self, messages: List[Dict[str, str]], model: str = "openai/gpt-oss-20b", api_key: Optional[str] = None) -> Generator[str, None, None]:
+    def stream_chat(
+        self,
+        messages: List[Dict[str, str]],
+        model: str = DEFAULT_MODEL_ID,
+        api_key: Optional[str] = None,
+        system_prompt: Optional[str] = None
+    ) -> Generator[str, None, None]:
         """Stream chat tokens via Groq API using ultra-fast SSE stream"""
         key = self.get_api_key(api_key)
         if not key:
@@ -223,7 +276,7 @@ class GroqService:
         model = self.resolve_model(model)
         user_query = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "")
         mood_info = self.detect_category_and_mood(user_query)
-        payload_messages = self.prepare_messages(messages)
+        payload_messages = self.prepare_messages(messages, system_prompt=system_prompt)
 
         # Emit meta first
         yield json.dumps({
@@ -239,7 +292,7 @@ class GroqService:
             "messages": payload_messages,
             "stream": True,
             "temperature": 0.7,
-            "max_tokens": 3072
+            "max_tokens": 4096
         }
 
         # Try ultra-fast streaming via requests first
@@ -256,7 +309,8 @@ class GroqService:
                         err_msg = r.json().get("error", {}).get("message", f"HTTP {r.status_code}")
                     except Exception:
                         err_msg = f"HTTP {r.status_code}: {r.text[:200]}"
-                    yield json.dumps({"type": "error", "error": f"Groq API Error: {err_msg}"})
+                    sanitized = sanitize_error_message(err_msg, key)
+                    yield json.dumps({"type": "error", "error": f"Groq API Error: {sanitized}"})
                     return
 
                 for line in r.iter_lines():
@@ -278,12 +332,20 @@ class GroqService:
                             continue
             return
         except ImportError:
-            pass
+            yield json.dumps({"type": "error", "error": "Server error: requests library is not installed."})
+            return
         except Exception as e:
-            yield json.dumps({"type": "error", "error": f"Streaming Error: {str(e)}"})
+            sanitized = sanitize_error_message(str(e), key)
+            yield json.dumps({"type": "error", "error": f"Streaming Error: {sanitized}"})
             return
 
-    def complete_chat(self, messages: List[Dict[str, str]], model: str = "openai/gpt-oss-120b", api_key: Optional[str] = None) -> Dict[str, Any]:
+    def complete_chat(
+        self,
+        messages: List[Dict[str, str]],
+        model: str = DEFAULT_MODEL_ID,
+        api_key: Optional[str] = None,
+        system_prompt: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Non-streaming completion for fallback / direct API testing"""
         key = self.get_api_key(api_key)
         if not key:
@@ -295,7 +357,7 @@ class GroqService:
         model = self.resolve_model(model)
         user_query = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "")
         mood_info = self.detect_category_and_mood(user_query)
-        payload_messages = self.prepare_messages(messages)
+        payload_messages = self.prepare_messages(messages, system_prompt=system_prompt)
 
         req_data = json.dumps({
             "model": model,
@@ -335,8 +397,13 @@ class GroqService:
                 msg = err_json.get("error", {}).get("message", str(e))
             except Exception:
                 msg = f"HTTP {e.code}: {e.reason}"
-            return {"success": False, "error": f"Groq API Error: {msg}"}
+            sanitized = sanitize_error_message(msg, key)
+            return {"success": False, "error": f"Groq API Error: {sanitized}"}
+        except urllib.error.URLError as e:
+            sanitized = sanitize_error_message(str(e.reason), key)
+            return {"success": False, "error": f"Network Error: Unable to reach Groq API ({sanitized})"}
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            sanitized = sanitize_error_message(str(e), key)
+            return {"success": False, "error": f"Request Error: {sanitized}"}
 
 groq_service = GroqService()

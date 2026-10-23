@@ -17,7 +17,7 @@ except ImportError:
                     k, v = line.split('=', 1)
                     os.environ.setdefault(k.strip(), v.strip())
 
-from groq_service import groq_service, AVAILABLE_MODELS, CATEGORY_PRESETS
+from groq_service import groq_service, AVAILABLE_MODELS, CATEGORY_PRESETS, DEFAULT_MODEL_ID
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.secret_key = os.urandom(24)
@@ -25,7 +25,7 @@ app.secret_key = os.urandom(24)
 @app.route('/')
 def index():
     has_key = bool(os.getenv("GROQ_API_KEY", "").strip())
-    default_model = os.getenv("DEFAULT_MODEL", "openai/gpt-oss-20b")
+    default_model = os.getenv("DEFAULT_MODEL", DEFAULT_MODEL_ID)
     return render_template(
         'index.html',
         models=AVAILABLE_MODELS,
@@ -40,7 +40,7 @@ def health():
     return jsonify({
         "status": "healthy",
         "has_api_key": bool(key),
-        "default_model": os.getenv("DEFAULT_MODEL", "openai/gpt-oss-20b"),
+        "default_model": os.getenv("DEFAULT_MODEL", DEFAULT_MODEL_ID),
         "models_count": len(AVAILABLE_MODELS)
     })
 
@@ -56,13 +56,19 @@ def get_categories():
 def chat_standard():
     data = request.get_json() or {}
     messages = data.get("messages", [])
-    model = data.get("model", "openai/gpt-oss-20b")
+    model = data.get("model", DEFAULT_MODEL_ID)
     user_key = request.headers.get("X-Groq-Api-Key") or data.get("api_key")
+    system_prompt = data.get("system_prompt") or data.get("custom_instructions")
 
     if not messages:
         return jsonify({"success": False, "error": "No messages provided."}), 400
 
-    result = groq_service.complete_chat(messages=messages, model=model, api_key=user_key)
+    result = groq_service.complete_chat(
+        messages=messages,
+        model=model,
+        api_key=user_key,
+        system_prompt=system_prompt
+    )
     if not result.get("success"):
         return jsonify(result), 400
     return jsonify(result)
@@ -71,14 +77,20 @@ def chat_standard():
 def chat_stream():
     data = request.get_json() or {}
     messages = data.get("messages", [])
-    model = data.get("model", "openai/gpt-oss-20b")
+    model = data.get("model", DEFAULT_MODEL_ID)
     user_key = request.headers.get("X-Groq-Api-Key") or data.get("api_key")
+    system_prompt = data.get("system_prompt") or data.get("custom_instructions")
 
     if not messages:
         return jsonify({"error": "No messages provided."}), 400
 
     def generate():
-        for chunk in groq_service.stream_chat(messages=messages, model=model, api_key=user_key):
+        for chunk in groq_service.stream_chat(
+            messages=messages,
+            model=model,
+            api_key=user_key,
+            system_prompt=system_prompt
+        ):
             yield f"data: {chunk}\n\n"
 
     return Response(
@@ -97,13 +109,18 @@ def validate_key():
     if not key:
         return jsonify({"valid": False, "message": "Key cannot be empty."}), 400
 
-    # Quick test ping to Groq
+    # Quick test ping to Groq using the active default model
     test_messages = [{"role": "user", "content": "ping"}]
-    res = groq_service.complete_chat(messages=test_messages, model="llama-3.1-8b-instant", api_key=key)
+    res = groq_service.complete_chat(
+        messages=test_messages,
+        model=DEFAULT_MODEL_ID,
+        api_key=key
+    )
     if res.get("success"):
         return jsonify({"valid": True, "message": "Groq API Key is valid and active!"})
     else:
-        return jsonify({"valid": False, "message": res.get("error", "Invalid API key.")}), 400
+        err_msg = res.get("error", "Invalid API key or network failure.")
+        return jsonify({"valid": False, "message": err_msg}), 400
 
 @app.route('/api/save-key', methods=['POST'])
 def save_key():
