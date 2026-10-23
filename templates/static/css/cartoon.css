@@ -205,7 +205,8 @@
    ========================================================================== */
 
 /* 1. THINKING MOOD (When query is sent / processing) */
-.mascot-container.mood-thinking .mascot-svg {
+.mascot-container.mood-thinking .mascot-svg,
+.cartoon-mascot-container.mood-thinking .mascot-svg {
     animation: thinkingWobble 1.2s infinite ease-in-out;
 }
 
@@ -214,7 +215,8 @@
     50% { transform: translateY(-7px) rotate(3deg); }
 }
 
-.mascot-container.mood-thinking .antenna-orb {
+.mascot-container.mood-thinking .antenna-orb,
+.cartoon-mascot-container.mood-thinking .antenna-orb {
     fill: #f59e0b;
     animation: antennaFastPulse 0.4s infinite alternate;
 }
@@ -224,19 +226,22 @@
     to { transform: scale(1.35); filter: drop-shadow(0 0 16px #fbbf24); }
 }
 
-.mascot-container.mood-thinking .eye-lens {
+.mascot-container.mood-thinking .eye-lens,
+.cartoon-mascot-container.mood-thinking .eye-lens {
     rx: 8;
     ry: 8;
     fill: #f59e0b;
 }
 
 /* 2. CODING & MATH MOOD (Cyber Glasses & Emerald Glow) */
-.mascot-container.mood-coding .antenna-orb {
+.mascot-container.mood-coding .antenna-orb,
+.cartoon-mascot-container.mood-coding .antenna-orb {
     fill: #10b981;
     filter: drop-shadow(0 0 12px #34d399);
 }
 
-.mascot-container.mood-coding .mascot-glasses {
+.mascot-container.mood-coding .mascot-glasses,
+.cartoon-mascot-container.mood-coding .mascot-glasses {
     display: block !important;
     animation: glassesPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
@@ -247,7 +252,8 @@
 }
 
 /* 3. TALKING / STREAMING MOOD (Mouth & Body sync with tokens) */
-.mascot-container.mood-talking .mascot-mouth {
+.mascot-container.mood-talking .mascot-mouth,
+.cartoon-mascot-container.mood-talking .mascot-mouth {
     animation: talkingMouth 0.3s infinite alternate ease-in-out;
 }
 
@@ -256,10 +262,12 @@
     100% { d: path("M 72 87 Q 80 99 88 87"); }
 }
 
-.mascot-container.mood-talking .hand-left {
+.mascot-container.mood-talking .hand-left,
+.cartoon-mascot-container.mood-talking .hand-left {
     animation: talkHandLeft 0.5s infinite alternate ease-in-out;
 }
-.mascot-container.mood-talking .hand-right {
+.mascot-container.mood-talking .hand-right,
+.cartoon-mascot-container.mood-talking .hand-right {
     animation: talkHandRight 0.5s infinite alternate ease-in-out;
 }
 
@@ -273,7 +281,8 @@
 }
 
 /* 4. CELEBRATING / HAPPY MOOD */
-.mascot-container.mood-celebrating .mascot-svg {
+.mascot-container.mood-celebrating .mascot-svg,
+.cartoon-mascot-container.mood-celebrating .mascot-svg {
     animation: celebrateJump 0.8s ease-in-out infinite alternate;
 }
 
@@ -282,23 +291,27 @@
     100% { transform: translateY(-18px) scale(1.06) rotate(4deg); }
 }
 
-.mascot-container.mood-celebrating .antenna-orb {
+.mascot-container.mood-celebrating .antenna-orb,
+.cartoon-mascot-container.mood-celebrating .antenna-orb {
     fill: #ec4899;
     filter: drop-shadow(0 0 14px #f472b6);
 }
 
-.mascot-container.mood-celebrating .eye-lens {
+.mascot-container.mood-celebrating .eye-lens,
+.cartoon-mascot-container.mood-celebrating .eye-lens {
     fill: #ec4899;
 }
 
 /* 5. SURPRISED / SCIENCE MOOD */
-.mascot-container.mood-surprised .eye-lens {
+.mascot-container.mood-surprised .eye-lens,
+.cartoon-mascot-container.mood-surprised .eye-lens {
     rx: 14;
     ry: 14;
     fill: #38bdf8;
 }
 
-.mascot-container.mood-surprised .antenna-orb {
+.mascot-container.mood-surprised .antenna-orb,
+.cartoon-mascot-container.mood-surprised .antenna-orb {
     fill: #38bdf8;
     filter: drop-shadow(0 0 16px #38bdf8);
 }

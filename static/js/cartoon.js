@@ -152,6 +152,7 @@ class CartoonMascot {
     }
 
     setMood(mood, customQuote = null) {
+        if (mood === 'excited') mood = 'celebrating';
         this.currentMood = mood;
         
         // Remove previous mood classes

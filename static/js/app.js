@@ -87,15 +87,21 @@ class CosmoApp {
         // State
         this.conversations = this.loadConversations();
         this.activeChatId = this.getActiveChatId();
+        this.validModels = ['openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'qwen/qwen3.8-27b'];
         this.currentModel = localStorage.getItem('cosmo_model') || 'openai/gpt-oss-20b';
-        // Auto-migrate legacy/slow model names if stored in browser localStorage
-        if (!this.currentModel || this.currentModel.startsWith('llama-') || this.currentModel.startsWith('mixtral-') || this.currentModel.startsWith('deepseek-') || this.currentModel.startsWith('gemma') || this.currentModel === 'openai/gpt-oss-120b') {
+        // Preserve selected model if in supported catalog; auto-migrate legacy model IDs
+        if (!this.validModels.includes(this.currentModel)) {
             this.currentModel = 'openai/gpt-oss-20b';
             localStorage.setItem('cosmo_model', 'openai/gpt-oss-20b');
         }
         this.apiKey = localStorage.getItem('cosmo_groq_key') || '';
+        this.customPrompt = localStorage.getItem('cosmo_custom_prompt') || '';
+        this.sfxEnabled = localStorage.getItem('cosmo_sfx') !== 'false';
+        if (window.soundManager) window.soundManager.enabled = this.sfxEnabled;
+        this.savedVoice = localStorage.getItem('cosmo_tts_voice') || '';
         this.isStreaming = false;
         this.abortController = null;
+        this.autoScrollEnabled = true;
         this.ttsEnabled = localStorage.getItem('cosmo_tts') === 'true';
         this.selectedVoice = null;
         this.recognition = null;
@@ -142,6 +148,7 @@ class CosmoApp {
             cancelSettingsBtn: document.getElementById('cancelSettingsBtn'),
             saveSettingsBtn: document.getElementById('saveSettingsBtn'),
             groqApiKeyInput: document.getElementById('groqApiKeyInput'),
+            systemRoleCustom: document.getElementById('systemRoleCustom'),
             validateKeyBtn: document.getElementById('validateKeyBtn'),
             keyValidateFeedback: document.getElementById('keyValidateFeedback'),
             openSettingsCard: document.getElementById('openSettingsCard'),
@@ -171,12 +178,17 @@ class CosmoApp {
         if (window.marked) {
             marked.setOptions({
                 highlight: function(code, lang) {
-                    if (lang && hljs.getLanguage(lang)) {
+                    if (lang && lang !== 'undefined' && lang !== 'null' && hljs.getLanguage(lang)) {
                         try {
                             return hljs.highlight(code, { language: lang }).value;
                         } catch (err) {}
                     }
-                    return hljs.highlightAuto(code).value;
+                    if (code && code.length < 5000) {
+                        try {
+                            return hljs.highlightAuto(code).value;
+                        } catch (e) {}
+                    }
+                    return code;
                 },
                 breaks: true,
                 gfm: true
@@ -194,7 +206,9 @@ class CosmoApp {
                         const opt = document.createElement('option');
                         opt.value = v.name;
                         opt.textContent = `${v.name} (${v.lang})`;
-                        if (v.default || v.name.includes('Google') || v.name.includes('Natural')) {
+                        if (this.savedVoice && v.name === this.savedVoice) {
+                            opt.selected = true;
+                        } else if (!this.savedVoice && (v.default || v.name.includes('Google') || v.name.includes('Natural'))) {
                             opt.selected = true;
                         }
                         this.dom.ttsVoiceSelect.appendChild(opt);
@@ -247,6 +261,19 @@ class CosmoApp {
             e.preventDefault();
             this.handleUserSubmit();
         });
+
+        // Auto-scroll management: track if user manually scrolls upward while streaming
+        if (this.dom.chatMessages) {
+            this.dom.chatMessages.addEventListener('scroll', () => {
+                const el = this.dom.chatMessages;
+                const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+                if (distanceToBottom <= 80) {
+                    this.autoScrollEnabled = true;
+                } else if (this.isStreaming) {
+                    this.autoScrollEnabled = false;
+                }
+            });
+        }
 
         this.dom.userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -312,6 +339,19 @@ class CosmoApp {
         document.querySelectorAll('.category-item').forEach(btn => {
             btn.addEventListener('click', () => {
                 const prompt = btn.dataset.prompt;
+                const catName = btn.querySelector('.cat-name')?.textContent || 'Domain';
+                const catId = btn.dataset.id || 'general';
+                const catIconMap = {
+                    coding: 'code-2',
+                    math: 'calculator',
+                    science: 'atom',
+                    creative: 'pen-tool',
+                    philosophy: 'book-open',
+                    business: 'trending-up',
+                    history: 'landmark',
+                    trivia: 'lightbulb'
+                };
+                this.updateActiveCategory(catName, catIconMap[catId] || 'sparkles');
                 if (prompt) {
                     this.dom.userInput.value = prompt;
                     this.adjustTextareaHeight();
@@ -351,8 +391,10 @@ class CosmoApp {
                 const modelName = opt.dataset.modelName;
                 const modelBadge = opt.dataset.modelBadge;
                 
-                this.currentModel = modelId;
-                localStorage.setItem('cosmo_model', modelId);
+                if (this.validModels.includes(modelId)) {
+                    this.currentModel = modelId;
+                    localStorage.setItem('cosmo_model', modelId);
+                }
 
                 document.querySelectorAll('.model-option').forEach(o => o.classList.remove('active'));
                 opt.classList.add('active');
@@ -415,6 +457,15 @@ class CosmoApp {
         // Settings Modal
         const openSettings = () => {
             this.dom.groqApiKeyInput.value = this.apiKey;
+            if (this.dom.systemRoleCustom) {
+                this.dom.systemRoleCustom.value = this.customPrompt || '';
+            }
+            if (this.dom.sfxToggle) {
+                this.dom.sfxToggle.checked = this.sfxEnabled;
+            }
+            if (this.dom.ttsVoiceSelect && this.savedVoice) {
+                this.dom.ttsVoiceSelect.value = this.savedVoice;
+            }
             this.dom.settingsModal.classList.remove('hidden');
         };
 
@@ -476,9 +527,31 @@ class CosmoApp {
                 } catch (e) {}
             }
 
+            // Custom Instructions (Persona)
+            if (this.dom.systemRoleCustom) {
+                let instructions = this.dom.systemRoleCustom.value.trim();
+                if (instructions.length > 2000) {
+                    instructions = instructions.slice(0, 2000);
+                    this.dom.systemRoleCustom.value = instructions;
+                    this.showToast("Custom instructions trimmed to 2,000 character limit.", "info");
+                }
+                this.customPrompt = instructions;
+                localStorage.setItem('cosmo_custom_prompt', this.customPrompt);
+            }
+
             // SFX preference
             if (this.dom.sfxToggle) {
-                window.soundManager.enabled = this.dom.sfxToggle.checked;
+                this.sfxEnabled = this.dom.sfxToggle.checked;
+                localStorage.setItem('cosmo_sfx', this.sfxEnabled);
+                if (window.soundManager) {
+                    window.soundManager.enabled = this.sfxEnabled;
+                }
+            }
+
+            // TTS Voice preference
+            if (this.dom.ttsVoiceSelect) {
+                this.savedVoice = this.dom.ttsVoiceSelect.value;
+                localStorage.setItem('cosmo_tts_voice', this.savedVoice);
             }
 
             this.updateKeyStatusBadge(bool(key));
@@ -499,10 +572,25 @@ class CosmoApp {
         if (activeOpt) {
             document.querySelectorAll('.model-option').forEach(o => o.classList.remove('active'));
             activeOpt.classList.add('active');
-            const name = activeOpt.dataset.modelName;
-            const badge = activeOpt.dataset.modelBadge;
+            const name = activeOpt.dataset.modelName || 'GPT-OSS 20B';
+            const badge = activeOpt.dataset.modelBadge || 'Lightning Fast';
             this.dom.currentModelName.textContent = name.replace('Llama ', '').replace('DeepSeek ', '');
             this.dom.currentModelBadge.textContent = badge.split(' ')[0];
+        }
+    }
+
+    updateActiveCategory(name = 'All Domains', iconName = 'globe', color = null) {
+        if (!this.dom.activeCategoryTag) return;
+        this.dom.activeCategoryTag.innerHTML = `
+            <i data-lucide="${iconName}"></i>
+            <span>${this.escapeHtml(name)}</span>
+        `;
+        if (color) {
+            const svg = this.dom.activeCategoryTag.querySelector('svg');
+            if (svg) svg.style.color = color;
+        }
+        if (window.lucide) {
+            lucide.createIcons({ root: this.dom.activeCategoryTag });
         }
     }
 
@@ -560,7 +648,7 @@ class CosmoApp {
         // Prepare Bot Message UI Row with streaming cursor
         const botRow = this.createBotMessageRow();
         this.dom.messagesContainer.appendChild(botRow);
-        this.scrollToBottom();
+        this.scrollToBottom(true);
 
         const contentEl = botRow.querySelector('.message-text-content');
         const cursorEl = botRow.querySelector('.streaming-cursor');
@@ -579,17 +667,22 @@ class CosmoApp {
             // Get conversation history payload
             const chatHistory = this.getActiveChatMessages();
 
+            const reqPayload = {
+                messages: chatHistory,
+                model: this.currentModel,
+                api_key: this.apiKey
+            };
+            if (this.customPrompt) {
+                reqPayload.system_prompt = this.customPrompt;
+            }
+
             const response = await fetch('/api/chat/stream', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Groq-Api-Key': this.apiKey
                 },
-                body: JSON.stringify({
-                    messages: chatHistory,
-                    model: this.currentModel,
-                    api_key: this.apiKey
-                }),
+                body: JSON.stringify(reqPayload),
                 signal: this.abortController.signal
             });
 
@@ -622,6 +715,20 @@ class CosmoApp {
                             metaPill.classList.remove('hidden');
                             metaPill.querySelector('.cat-label').textContent = `${detectedCategory.toUpperCase()} DOMAIN`;
                             
+                            // Dynamically update active category indicator in input bar
+                            const catMap = {
+                                coding: { name: 'Coding & Tech', icon: 'code-2' },
+                                math: { name: 'Mathematics & Logic', icon: 'calculator' },
+                                science: { name: 'Science & Space', icon: 'atom' },
+                                creative: { name: 'Creative & Fiction', icon: 'pen-tool' },
+                                philosophy: { name: 'Philosophy', icon: 'book-open' },
+                                business: { name: 'Business & Strategy', icon: 'trending-up' },
+                                history: { name: 'History & Lore', icon: 'landmark' },
+                                trivia: { name: 'General Polymath', icon: 'lightbulb' }
+                            };
+                            const mapped = catMap[detectedCategory] || { name: `${detectedCategory.charAt(0).toUpperCase() + detectedCategory.slice(1)} Domain`, icon: 'sparkles' };
+                            this.updateActiveCategory(mapped.name, mapped.icon);
+
                             // Adjust mascot to category mood
                             if (window.mascot) {
                                 window.mascot.setMood(parsed.mood || 'talking', parsed.mascot_quote);
@@ -710,31 +817,52 @@ class CosmoApp {
 
     enhanceCodeBlocks(container) {
         container.querySelectorAll('pre').forEach((pre) => {
-            if (pre.parentElement.classList.contains('code-block-container')) return;
+            if (pre.parentElement && pre.parentElement.classList.contains('code-block-container')) return;
+
+            const codeEl = pre.querySelector('code');
+            if (!codeEl) return;
+
+            // Strip invalid or placeholder language classes
+            if (codeEl.classList.contains('language-undefined')) codeEl.classList.remove('language-undefined');
+            if (codeEl.classList.contains('language-null')) codeEl.classList.remove('language-null');
+
+            const validLangClass = Array.from(codeEl.classList).find(c =>
+                c.startsWith('language-') && c !== 'language-undefined' && c !== 'language-null'
+            );
+            let langName = validLangClass ? validLangClass.replace('language-', '').trim() : '';
+            if (!langName || langName.toLowerCase() === 'undefined' || langName.toLowerCase() === 'null') {
+                langName = 'code';
+            }
+
+            // Remove duplicated language label if model emitted language name as first line of code block
+            const rawCode = codeEl.textContent || '';
+            const lines = rawCode.split('\n');
+            if (lines.length > 1 && lines[0].trim().toLowerCase() === langName.toLowerCase()) {
+                lines.shift();
+                codeEl.textContent = lines.join('\n');
+            }
 
             const wrapper = document.createElement('div');
             wrapper.className = 'code-block-container';
 
-            const codeEl = pre.querySelector('code');
-            const langClass = Array.from(codeEl.classList).find(c => c.startsWith('language-'));
-            const langName = langClass ? langClass.replace('language-', '') : 'code';
-
             const header = document.createElement('div');
             header.className = 'code-header';
             header.innerHTML = `
-                <span class="code-lang-tag">${langName}</span>
-                <button class="copy-code-btn" title="Copy code snippet">
+                <span class="code-lang-tag">${this.escapeHtml(langName)}</span>
+                <button class="copy-code-btn" type="button" title="Copy code snippet">
                     <i data-lucide="copy" style="width: 12px; height: 12px;"></i>
                     <span>Copy</span>
                 </button>
             `;
 
             const copyBtn = header.querySelector('.copy-code-btn');
-            copyBtn.addEventListener('click', () => {
+            copyBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
                 navigator.clipboard.writeText(codeEl.innerText);
-                copyBtn.querySelector('span').textContent = 'Copied!';
+                const span = copyBtn.querySelector('span');
+                if (span) span.textContent = 'Copied!';
                 setTimeout(() => {
-                    copyBtn.querySelector('span').textContent = 'Copy';
+                    if (span) span.textContent = 'Copy';
                 }, 2000);
             });
 
@@ -748,17 +876,28 @@ class CosmoApp {
 
     finalizeBotMessage(botRow, text) {
         const contentEl = botRow.querySelector('.message-text-content');
-        this.renderMarkdownStream(contentEl, text, true);
+        if (contentEl) {
+            this.renderMarkdownStream(contentEl, text, true);
+        }
+
+        const contentWrapper = botRow.querySelector('.message-content-wrapper');
+        if (!contentWrapper) return;
+
+        // Remove any existing action toolbar to prevent duplicate Copy / Listen buttons
+        const existingActions = contentWrapper.querySelector('.message-actions');
+        if (existingActions) {
+            existingActions.remove();
+        }
 
         // Add action toolbar
         const actions = document.createElement('div');
         actions.className = 'message-actions';
         actions.innerHTML = `
-            <button class="action-tool-btn copy-msg-btn" title="Copy response text">
-                <i data-lucide="copy"></i> Copy
+            <button class="action-tool-btn copy-msg-btn" type="button" title="Copy response text">
+                <i data-lucide="copy"></i> <span>Copy</span>
             </button>
-            <button class="action-tool-btn speak-msg-btn" title="Listen to response">
-                <i data-lucide="volume-2"></i> Listen
+            <button class="action-tool-btn speak-msg-btn" type="button" title="Listen to response">
+                <i data-lucide="volume-2"></i> <span>Listen</span>
             </button>
         `;
 
@@ -771,7 +910,7 @@ class CosmoApp {
             this.speakText(text);
         });
 
-        botRow.querySelector('.message-content-wrapper').appendChild(actions);
+        contentWrapper.appendChild(actions);
         if (window.lucide) lucide.createIcons({ root: actions });
     }
 
@@ -813,7 +952,7 @@ class CosmoApp {
             `;
             this.dom.messagesContainer.appendChild(row);
             if (window.lucide) lucide.createIcons({ root: row });
-            this.scrollToBottom();
+            this.scrollToBottom(true);
         }
     }
 
@@ -844,8 +983,16 @@ class CosmoApp {
         window.speechSynthesis.speak(utterance);
     }
 
-    scrollToBottom() {
-        this.dom.chatMessages.scrollTop = this.dom.chatMessages.scrollHeight;
+    scrollToBottom(force = false) {
+        const container = this.dom.chatMessages;
+        if (!container) return;
+        if (force) {
+            this.autoScrollEnabled = true;
+            container.scrollTop = container.scrollHeight;
+            return;
+        }
+        if (!this.autoScrollEnabled) return;
+        container.scrollTop = container.scrollHeight;
     }
 
     escapeHtml(str) {
@@ -923,6 +1070,7 @@ class CosmoApp {
         localStorage.setItem('cosmo_active_chat', newId);
         this.saveConversations();
         this.loadActiveConversation();
+        this.updateActiveCategory('All Domains', 'globe');
         if (window.mascot) window.mascot.setMood('idle', "Started a fresh conversation!");
     }
 
@@ -932,6 +1080,7 @@ class CosmoApp {
             this.conversations[this.activeChatId].title = 'New Conversation';
             this.saveConversations();
             this.loadActiveConversation();
+            this.updateActiveCategory('All Domains', 'globe');
             this.showToast("Conversation cleared.", "info");
         }
     }
@@ -942,8 +1091,10 @@ class CosmoApp {
 
         if (!chat || !chat.messages || chat.messages.length === 0) {
             this.dom.welcomeHero.classList.remove('hidden');
+            this.updateActiveCategory('All Domains', 'globe');
         } else {
             this.dom.welcomeHero.classList.add('hidden');
+            let lastCategory = null;
             chat.messages.forEach(m => {
                 if (m.role === 'user') {
                     this.appendMessage('user', m.content);
@@ -951,6 +1102,7 @@ class CosmoApp {
                     const botRow = this.createBotMessageRow();
                     botRow.querySelector('.streaming-cursor')?.remove();
                     if (m.category) {
+                        lastCategory = m.category;
                         const pill = botRow.querySelector('.msg-meta-pill');
                         pill.classList.remove('hidden');
                         pill.querySelector('.cat-label').textContent = `${m.category.toUpperCase()} DOMAIN`;
@@ -959,7 +1111,23 @@ class CosmoApp {
                     this.finalizeBotMessage(botRow, m.content);
                 }
             });
-            this.scrollToBottom();
+            if (lastCategory) {
+                const catMap = {
+                    coding: { name: 'Coding & Tech', icon: 'code-2' },
+                    math: { name: 'Mathematics & Logic', icon: 'calculator' },
+                    science: { name: 'Science & Space', icon: 'atom' },
+                    creative: { name: 'Creative & Fiction', icon: 'pen-tool' },
+                    philosophy: { name: 'Philosophy', icon: 'book-open' },
+                    business: { name: 'Business & Strategy', icon: 'trending-up' },
+                    history: { name: 'History & Lore', icon: 'landmark' },
+                    trivia: { name: 'General Polymath', icon: 'lightbulb' }
+                };
+                const mapped = catMap[lastCategory] || { name: `${lastCategory.charAt(0).toUpperCase() + lastCategory.slice(1)} Domain`, icon: 'sparkles' };
+                this.updateActiveCategory(mapped.name, mapped.icon);
+            } else {
+                this.updateActiveCategory('All Domains', 'globe');
+            }
+            this.scrollToBottom(true);
         }
         this.renderHistory();
     }
